@@ -51,7 +51,7 @@ enum{
   ROOF_RUNNING,
   ROOF_IDLE
 } ;
-int m_roofstatus = ROOF_IDLE;
+int m_roofStatus = ROOF_IDLE;
 
 enum {
   eROOF_CLOSED,
@@ -63,6 +63,8 @@ enum {
   ePUMP_STOPED,
 };
 
+bool m_pumpStatus = ePUMP_STOPED;
+bool m_roofStatus = eROOF_CLOSED;
 
 String serverList[3] = {
   "pool.ntp.org",
@@ -83,6 +85,7 @@ NTPClient timeClient(ntpUDP, "0.asia.pool.ntp.org", 3600, 0);
 
 
 int udpPort = 1000;
+float m_huminity = 0.0;
 
 void setup()
 {
@@ -187,20 +190,16 @@ int readHuminity()
   return percent;
 }
 
-
-bool pumpStatus = ePUMP_STOPED;
-bool roofStatus = eROOF_CLOSED;
-
 void startPump()
 {
   Serial.println(" Start Pump !!!");
-  pumpStatus = ePUMP_STARTED;
+  m_pumpStatus = ePUMP_STARTED;
 }
 
 void stopPump()
 {
   Serial.println(" Stop Pump !!!");
-  pumpStatus = ePUMP_STOPED;
+  m_pumpStatus = ePUMP_STOPED;
 }
 
 bool detectRain()
@@ -210,12 +209,12 @@ bool detectRain()
 
 void openRoof()
 {
-  roofStatus = eROOF_OPENED;
+  m_roofStatus = eROOF_OPENED;
 }
 
 void closeRoof()
 {
-  roofStatus = eROOF_CLOSED;
+  m_roofStatus = eROOF_CLOSED;
 }
 
 void handleUART_fromArduino()
@@ -245,9 +244,6 @@ void handleUART_fromArduino()
 }
 
 void handleFirebase()
-{}
-
-void loop()
 {
   unsigned long epochTime;
   String hoursStr, minuteStr, secondStr;
@@ -287,26 +283,42 @@ void loop()
   {
     sendDataPrevMillis = millis();
     delay(5000);
-    int huminity = readHuminity();
-
-    String prefix = "/GardenSensor/" + hoursStr + minuteStr + secondStr;
-    String huminityPathToFireBase = prefix + "/Huminity";
-    String timePathToFireBase = prefix + "/time";
+    
+    String prefix;
+    // String prefix = "/GardenSensor/" + hoursStr + minuteStr + secondStr;
+    // String huminityPathToFireBase = prefix + "/Huminity";
+    // String timePathToFireBase = prefix + "/time";
 
     // Should be remove in reality
     static int r1 = 0;
     r1 = r1+ 3; if (r1 > 40) r1=0;
 
-    String firebaseString = "13-09-2025;" + timeClient.getFormattedTime() + ";Huminity;" + String(huminity + r1);
-    Serial.printf("Push huminity to Firebase... %s\n", Firebase.setString(fbdo, huminityPathToFireBase.c_str(), firebaseString) ? "ok" : fbdo.errorReason().c_str());
+    // String firebaseString = "13-09-2025;" + timeClient.getFormattedTime() + ";Huminity;" + String(huminity + r1);
+    // Serial.printf("Push huminity to Firebase... %s\n", Firebase.setString(fbdo, huminityPathToFireBase.c_str(), firebaseString) ? "ok" : fbdo.errorReason().c_str());
     // Serial.printf("Push time to Firebase... %s\n", Firebase.setString(fbdo, timePathToFireBase.c_str(), timeClient.getFormattedTime()) ? "ok" : fbdo.errorReason().c_str());
-    
+  
+    String prefix = "/GardenControl";
+    String huminityPathToFireBase = prefix + "/Huminity";
+
+    Serial.printf("Push huminity to Firebase... %s\n", Firebase.setFloat(fbdo, huminityPathToFireBase.c_str(), m_huminity) ? "ok" : fbdo.errorReason().c_str());
+  
+    String temperaturePathToFireBase = prefix + "/Temperature";
+    Serial.printf("Push temperature to Firebase... %s\n", Firebase.setFloat(fbdo, temperaturePathToFireBase.c_str(), m_temperature) ? "ok" : fbdo.errorReason().c_str());
+
+    String pumpstatusPathToFireBase = prefix + "/Pump_Status";
+    Serial.printf("Push temperature to Firebase... %s\n", Firebase.setString(fbdo, pumpstatusPathToFireBase.c_str(), m_pumpstatus) ? "ok" : fbdo.errorReason().c_str());
+  }
+}
+
+void loop()
+{
+    m_huminity = readHuminity();
     #define HUM_PUMP_LIMIT    (40) // Percent
 
     if (huminity > HUM_PUMP_LIMIT)
       startPump();
     else {
-      if (pumpStatus == ePUMP_STARTED)
+      if (m_pumpStatus == ePUMP_STARTED)
         stopPump();
     }
 
@@ -314,7 +326,7 @@ void loop()
     {
       closeRoof();
     } else {
-      if (roofStatus == eROOF_CLOSED)
+      if (m_roofStatus == eROOF_CLOSED)
         openRoof();
     }
 
@@ -362,5 +374,5 @@ void loop()
     // firebase_rtdb_data_type_array, firebase_rtdb_data_type_blob, and firebase_rtdb_data_type_file (10)
 
     // count++;
-  }
+  // }
 }

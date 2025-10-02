@@ -5,8 +5,8 @@ const int stepPin = 5;
 const int dirPin  = 2; 
 const int enPin   = 8;
 
-int limitSwitchPin_1 = 3;    // Công tắc nối vào chân D2
-int limitSwitchPin_2 = 4;    // Công tắc nối vào chân D2
+int limitSwitchPin_1 = 3;    // Công tắc nối vào chân D3
+int limitSwitchPin_2 = 4;    // Công tắc nối vào chân D4
 
 enum{
   ROOF_RUNNING,
