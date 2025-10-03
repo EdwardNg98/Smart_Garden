@@ -8,12 +8,12 @@ const int enPin   = 8;
 int limitSwitchPin_1 = 3;    // Công tắc nối vào chân D3
 int limitSwitchPin_2 = 4;    // Công tắc nối vào chân D4
 
-enum{
+enum eMotorStatus{
   ROOF_RUNNING,
   ROOF_IDLE
 } ;
 
-int m_roof_status = ROOF_IDLE;
+eMotorStatus m_roofMotorStatus = ROOF_IDLE;
 
 // Define pins for communication
 SoftwareSerial espSerial(2, 3); // RX, TX  (D2 = RX, D3 = TX)
@@ -47,7 +47,7 @@ void loop() {
     Serial.print("From ESP8266: ");
     Serial.println(response);
 
-    response.trim();  // Remove spaces/newlines
+    // response.trim();  // Remove spaces/newlines
 
     if (response.length() > 0) {
       processCommand(response);
@@ -55,11 +55,14 @@ void loop() {
 
   }
 
-  // Send Roof status : RUNNING/IDLE to ESP8266
-  espSerial.print("Roof_status");
-  espSerial.println(m_roof_status);
-
   delay(200);
+}
+
+void feedbackMotorStatus(eMotorStatus status)
+{
+  // Send Roof motor status : RUNNING/IDLE to ESP8266
+  espSerial.print("Roof_motor_status ");
+  espSerial.println(status);
 }
 
 void processCommand(String command) {
@@ -71,43 +74,49 @@ void processCommand(String command) {
     return;
   }
 
-  String dir = command.substring(0, spaceIndex);
-  int steps = command.substring(spaceIndex + 1).toInt();
+  // String dir = command.substring(0, spaceIndex);
+  // int steps = command.substring(spaceIndex + 1).toInt();
+  String dir = command.substring(spaceIndex +1);
 
-  if (steps <= 0) {
-    Serial.println("Invalid step count.");
-    return;
-  }
+  // if (steps <= 0) {
+  //   Serial.println("Invalid step count.");
+  //   return;
+  // }
 
-  if (dir == "CW") {
+  #define STEP 30
+
+  if (dir == "eROOF_OPENED") {
     while(digitalRead(limitSwitchPin_1) == HIGH)  // Công tắc hành trình thả ra.
     {
-      rotateStepper(HIGH, steps);
-      Serial.print("Rotated CW ");
-      Serial.print(steps);
-      Serial.println(" steps.");
+      rotateStepper(HIGH, STEP);
+      // Serial.print("Rotated CW ");
+      // Serial.print(steps);
+      // Serial.println(" steps.");
       
-      m_roof_status = ROOF_RUNNING;
+      m_roofMotorStatus = ROOF_RUNNING;
+      feedbackMotorStatus(m_roofMotorStatus);
     }
 
     
   } 
-  else if (dir == "CCW") {
+  else if (dir == "eROOF_CLOSED") {
     while(digitalRead(limitSwitchPin_2) == HIGH)  // Công tắc hành trình thả ra.
     {
-      rotateStepper(LOW, steps);
-      Serial.print("Rotated CCW ");
-      Serial.print(steps);
-      Serial.println(" steps.");
+      rotateStepper(LOW, STEP);
+      // Serial.print("Rotated CCW ");
+      // Serial.print(steps);
+      // Serial.println(" steps.");
 
-      m_roof_status = ROOF_RUNNING;
+      m_roofMotorStatus = ROOF_RUNNING;
+      feedbackMotorStatus(m_roofMotorStatus);
     }
   } 
   else {
-    Serial.println("Invalid direction. Use CW or CCW.");
+    Serial.println("Invalid direction. Use eROOF_OPENED or eROOF_CLOSED.");
   }
 
-  m_roof_status = ROOF_IDLE;
+  m_roofMotorStatus = ROOF_IDLE;
+  feedbackMotorStatus(m_roofMotorStatus);
 }
 
 void rotateStepper(int direction, int steps) {

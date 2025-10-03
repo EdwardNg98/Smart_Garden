@@ -51,7 +51,7 @@ enum{
   ROOF_RUNNING,
   ROOF_IDLE
 } ;
-int m_roofStatus = ROOF_IDLE;
+int m_roofMotorStatus = ROOF_IDLE;
 
 enum {
   eROOF_CLOSED,
@@ -86,6 +86,7 @@ NTPClient timeClient(ntpUDP, "0.asia.pool.ntp.org", 3600, 0);
 
 int udpPort = 1000;
 float m_huminity = 0.0;
+float m_temperature = 0.0;
 
 void setup()
 {
@@ -207,14 +208,22 @@ bool detectRain()
   return false;
 }
 
+
+// Send command to Arduino
 void openRoof()
 {
   m_roofStatus = eROOF_OPENED;
+
+  arduinoSerial.print("Command: ");
+  arduinoSerial.println("eROOF_OPENED");
 }
 
 void closeRoof()
 {
   m_roofStatus = eROOF_CLOSED;
+
+  arduinoSerial.print("Command: ");
+  arduinoSerial.println("eROOF_CLOSED");
 }
 
 void handleUART_fromArduino()
@@ -233,12 +242,13 @@ void handleUART_fromArduino()
       return;
     }
 
-    String dir = msg.substring(0, spaceIndex);
-    int steps = msg.substring(spaceIndex + 1).toInt();
+    String command = msg.substring(0, spaceIndex);
+    int value = msg.substring(spaceIndex + 1).toInt();
 
-    if (steps <= 0) {
-      arduinoSerial.println("Invalid step count.");
-      return;
+    // Get m_roofStatus and m_roofMotorStatus
+    if (command == "Roof_motor_status")
+    {
+      m_roofMotorStatus = value;
     }
   }
 }
@@ -297,7 +307,7 @@ void handleFirebase()
     // Serial.printf("Push huminity to Firebase... %s\n", Firebase.setString(fbdo, huminityPathToFireBase.c_str(), firebaseString) ? "ok" : fbdo.errorReason().c_str());
     // Serial.printf("Push time to Firebase... %s\n", Firebase.setString(fbdo, timePathToFireBase.c_str(), timeClient.getFormattedTime()) ? "ok" : fbdo.errorReason().c_str());
   
-    String prefix = "/GardenControl";
+    prefix = "/GardenControl";
     String huminityPathToFireBase = prefix + "/Huminity";
 
     Serial.printf("Push huminity to Firebase... %s\n", Firebase.setFloat(fbdo, huminityPathToFireBase.c_str(), m_huminity) ? "ok" : fbdo.errorReason().c_str());
@@ -305,8 +315,11 @@ void handleFirebase()
     String temperaturePathToFireBase = prefix + "/Temperature";
     Serial.printf("Push temperature to Firebase... %s\n", Firebase.setFloat(fbdo, temperaturePathToFireBase.c_str(), m_temperature) ? "ok" : fbdo.errorReason().c_str());
 
-    String pumpstatusPathToFireBase = prefix + "/Pump_Status";
-    Serial.printf("Push temperature to Firebase... %s\n", Firebase.setString(fbdo, pumpstatusPathToFireBase.c_str(), m_pumpstatus) ? "ok" : fbdo.errorReason().c_str());
+    String pumpStatusPathToFireBase = prefix + "/Pump_Status";
+    Serial.printf("Push pumpStatus to Firebase... %s\n", Firebase.setString(fbdo, pumpStatusPathToFireBase.c_str(), m_pumpStatus) ? "ok" : fbdo.errorReason().c_str());
+
+    String roofMotorStatusPathToFireBase = prefix + "/RoofMotor_Status";
+    Serial.printf("Push roofMotorStatus to Firebase... %s\n", Firebase.setString(fbdo, roofMotorStatusPathToFireBase.c_str(), m_roofMotorStatus) ? "ok" : fbdo.errorReason().c_str());
   }
 }
 
@@ -315,7 +328,7 @@ void loop()
     m_huminity = readHuminity();
     #define HUM_PUMP_LIMIT    (40) // Percent
 
-    if (huminity > HUM_PUMP_LIMIT)
+    if (m_huminity < HUM_PUMP_LIMIT)
       startPump();
     else {
       if (m_pumpStatus == ePUMP_STARTED)
