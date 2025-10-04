@@ -11,6 +11,8 @@
 #include <WiFiUdp.h>
 #include <NTPClient.h>
 
+#include <DHT.h>
+
 /* 1. Define the WiFi credentials */
 #define WIFI_SSID "The Wow Coffee & Tea"
 #define WIFI_PASSWORD "thewowxinchao"
@@ -66,10 +68,7 @@ bool m_roofStatus = eROOF_CLOSED;
 
 
 // Pin definitions for motor
-// const int stepPin = 7; 
-const int dirPin  = 5; 
-const int enPin   = 6;
-const int rainSensorPin = 7;
+const int rainSensorPin = 13; // D7 - GPIO13
 const int relayForPumpPin = 0;
 
 String serverList[3] = {
@@ -89,6 +88,11 @@ int serverGMTList[3] = {
 WiFiUDP ntpUDP;
 NTPClient timeClient(ntpUDP, "0.asia.pool.ntp.org", 3600, 0);
 
+
+// Chân kết nối DHT11
+#define DHTPIN 2       // GPIO2 = D4 trên NodeMCU
+#define DHTTYPE DHT11  // Loại cảm biến: DHT11 hoặc DHT22
+DHT dht(DHTPIN, DHTTYPE);
 
 int udpPort = 1000;
 float m_huminity = 0.0;
@@ -114,17 +118,14 @@ enum {
 
 int m_userCommand = eIDLE_COMMAND;
 
+enum {
+  eRAINING,
+  eNO_RAINING
+};
+
 void setup()
 {
   // Motor setup
-  pinMode(dirPin, OUTPUT);
-  pinMode(enPin, OUTPUT);
-
-  digitalWrite(enPin, HIGH); // Disble motor driver
-
-  // Cam bien hanh trinh setup
-  pinMode(limitSwitchPin_1, INPUT_PULLUP); // Bật trở kéo lên
-  pinMode(limitSwitchPin_2, INPUT_PULLUP); // Bật trở kéo lên
 
   pinMode(rainSensorPin, INPUT_PULLUP); // Bật trở kéo lên
 
@@ -216,6 +217,8 @@ void setup()
   config.tcp_data_sending_retry = 1;
 
   */
+  // DHT init
+  dht.begin();
 
   // Initialize the screen
   lcd.init();
@@ -238,12 +241,27 @@ float readHuminity()
 
 float readTemperature()
 {
-  // float value = analogRead(A0); // Huminity analog plug into A0
-  // float percent = map(value, 0, 1023, 0, 100);
-  // Serial.println("Temperature value: ");
-  // Serial.println(percent);
-  float value = 35.6;
-  return value;
+  float t = dht.readTemperature();
+
+  float f = dht.readTemperature(true);
+  float h = dht.readHumidity();
+ // Check if any reads failed and exit early (to try again).
+  if (isnan(h) || isnan(t) || isnan(f)) {
+    Serial.println(F("Failed to read from DHT sensor!"));
+    return m_temperature;
+  }
+
+  // Compute heat index in Fahrenheit (the default)
+  float hif = dht.computeHeatIndex(f, h);
+
+  // Compute heat index in Celsius (isFahreheit = false)
+  float hic = dht.computeHeatIndex(t, h, false);
+
+  Serial.print(F("%  Temperature: "));
+  Serial.print(t);
+  Serial.print(F("°C "));
+
+  return t;
 }
 
 void startPump()
@@ -264,6 +282,8 @@ void stopPump()
 
 bool detectRain()
 {
+
+  // 1 : means no rain, 0 : raining
   Serial.print("Gia tri cam bien mua: ");
   Serial.println(digitalRead(rainSensorPin));
   return digitalRead(rainSensorPin);
@@ -279,8 +299,8 @@ void openRoof()
 
     Serial.println("Opening the Roof !!!!");
 
-    digitalWrite(enPin, LOW); // Disble motor driver
-    digitalWrite(dirPin, LOW); // Set dir
+    // digitalWrite(enPin, LOW); // Disble motor driver
+    // digitalWrite(dirPin, LOW); // Set dir
   }
 
   m_roofStatus = eROOF_OPENED;
@@ -295,8 +315,8 @@ void closeRoof()
 
     Serial.println("Closing the Roof !!!!");
 
-    digitalWrite(enPin, LOW); // Disble motor driver
-    digitalWrite(dirPin, HIGH); // Set dir
+    // digitalWrite(enPin, LOW); // Disble motor driver
+    // digitalWrite(dirPin, HIGH); // Set dir
   }
 
   m_roofStatus = eROOF_CLOSED;
@@ -431,7 +451,7 @@ void loop()
   Serial.print("User Command : ");
   Serial.println(m_userCommand);
 
-  if (detectRain())
+  if (detectRain() == eRAINING)
   {
     closeRoof();
   } else {
@@ -441,8 +461,8 @@ void loop()
 
   updateOnLcd();
 
-  getDataFromFirebase();
-  pushDataToFirebase();
+  // getDataFromFirebase();
+  // pushDataToFirebase();
   
   delay(500);
 }
