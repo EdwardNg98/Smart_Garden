@@ -250,7 +250,7 @@ float readHuminity()
 {
   float value = analogRead(A0); // Huminity analog plug into A0
   float percent = map(value, 0, 1023, 0, 100);
-  Serial.println("Huminity value: ");
+  Serial.print("Huminity value: ");
   Serial.println(percent);
   return percent;
 }
@@ -316,14 +316,22 @@ void openRoof()
 
     digitalWrite(motorRequestPin, HIGH);
     digitalWrite(dirRequestPin, eMOVE_OPEN);
-
+    delay(1000);
     while(digitalRead(arduinoFeedbackDonePin) == LOW)
     {
-      digitalWrite(motorRequestPin, LOW);
+      delay(100);
     }
+
+    digitalWrite(motorRequestPin, LOW);
   }
 
   m_roofStatus = eROOF_OPENED;
+
+  String prefix = "/GardenControl";
+  String usercontrolPathToFireBase = prefix + "/UserCommand";
+
+  Serial.printf("Push usercommand = IDLE to Firebase... %s\n", Firebase.setInt(fbdo, usercontrolPathToFireBase.c_str(), 0) ? "ok" : fbdo.errorReason().c_str());
+  
   Serial.println("Completed opening the roof !!!!");
 }
 
@@ -336,14 +344,22 @@ void closeRoof()
 
     digitalWrite(motorRequestPin, HIGH);
     digitalWrite(dirRequestPin, eMOVE_CLOSE);
-
+    delay(1000);
     while(digitalRead(arduinoFeedbackDonePin) == LOW)
     {
-      digitalWrite(motorRequestPin, LOW);
+      delay(100);
     }
+
+    digitalWrite(motorRequestPin, LOW);
   }
 
   m_roofStatus = eROOF_CLOSED;
+
+  String prefix = "/GardenControl";
+  String usercontrolPathToFireBase = prefix + "/UserCommand";
+
+  Serial.printf("Push usercommand = IDLE to Firebase... %s\n", Firebase.setInt(fbdo, usercontrolPathToFireBase.c_str(), 0) ? "ok" : fbdo.errorReason().c_str());
+  
   Serial.println("Completed closing the roof !!!!");
 }
 
@@ -475,13 +491,16 @@ void loop()
   // Serial.print("User Command : ");
   // Serial.println(m_userCommand);
 
-  // if (detectRain() == eRAINING)
-  // {
-  //   closeRoof();
-  // } else {
-  //   if (m_roofStatus == eROOF_CLOSED)
-  //     openRoof();
-  // }
+  if ((m_userMode == "Auto" && detectRain() == eRAINING) || 
+        (m_userMode == "Manual" && m_userCommand == eCLOSEROOF_COMMAND))
+  {
+    closeRoof();
+  } 
+  else if ((m_userMode == "Auto" && detectRain() == eRAINING) || 
+        (m_userMode == "Manual" && m_userCommand == eOPENROOF_COMMAND))
+  {
+    openRoof();
+  }
 
   updateOnLcd();
 
