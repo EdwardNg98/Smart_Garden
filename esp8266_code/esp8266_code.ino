@@ -69,7 +69,7 @@ bool m_roofStatus = eROOF_CLOSED;
 
 // Pin definitions for motor
 const int rainSensorPin = 13; // D7 - GPIO13
-const int relayForPumpPin = 0;
+const int relayForPumpPin = 16;
 
 String serverList[3] = {
   "pool.ntp.org",
@@ -98,15 +98,22 @@ int udpPort = 1000;
 float m_huminity = 0.0;
 float m_temperature = 0.0;
 
-int limitSwitchPin_1 = 3; 
-int limitSwitchPin_2 = 4;
+enum {
+  eMOVE_OPEN = HIGH,
+  eMOVE_CLOSE = LOW,
+};
+
+const int motorRequestPin = 12; // D6
+const int arduinoFeedbackDonePin = 14; // D5
+
+const int dirRequestPin = 15; // D8
 
 enum {
   eMANUAL_MODE,
   eAUTO_MODE,
 };
 
-int m_userMode = eMANUAL_MODE;
+String m_userMode = "Manual";
 
 enum {
   eIDLE_COMMAND,
@@ -125,8 +132,17 @@ enum {
 
 void setup()
 {
-  // Motor setup
+  // Initialize pump
+  pinMode(relayForPumpPin, OUTPUT);
+  digitalWrite(relayForPumpPin, LOW);
 
+  // Motor setup
+  pinMode(motorRequestPin, OUTPUT);
+  digitalWrite(motorRequestPin, LOW);
+
+  pinMode(dirRequestPin, OUTPUT);
+
+  pinMode(arduinoFeedbackDonePin, INPUT_PULLUP);
   pinMode(rainSensorPin, INPUT_PULLUP); // Bật trở kéo lên
 
   Serial.begin(115200);
@@ -293,14 +309,18 @@ bool detectRain()
 // Update the action
 void openRoof()
 {
-  while (digitalRead(limitSwitchPin_1) == HIGH)
   {
     m_roofMotorStatus = eROOF_OPENING;
 
     Serial.println("Opening the Roof !!!!");
 
-    // digitalWrite(enPin, LOW); // Disble motor driver
-    // digitalWrite(dirPin, LOW); // Set dir
+    digitalWrite(motorRequestPin, HIGH);
+    digitalWrite(dirRequestPin, eMOVE_OPEN);
+
+    while(digitalRead(arduinoFeedbackDonePin) == LOW)
+    {
+      digitalWrite(motorRequestPin, LOW);
+    }
   }
 
   m_roofStatus = eROOF_OPENED;
@@ -309,14 +329,18 @@ void openRoof()
 
 void closeRoof()
 {
-  while (digitalRead(limitSwitchPin_2) == HIGH)
   {
     m_roofMotorStatus = eROOF_CLOSING;
 
     Serial.println("Closing the Roof !!!!");
 
-    // digitalWrite(enPin, LOW); // Disble motor driver
-    // digitalWrite(dirPin, HIGH); // Set dir
+    digitalWrite(motorRequestPin, HIGH);
+    digitalWrite(dirRequestPin, eMOVE_CLOSE);
+
+    while(digitalRead(arduinoFeedbackDonePin) == LOW)
+    {
+      digitalWrite(motorRequestPin, LOW);
+    }
   }
 
   m_roofStatus = eROOF_CLOSED;
@@ -391,8 +415,8 @@ void getDataFromFirebase()
   prefix = "/GardenControl";
   String userModePathToFireBase = prefix + "/UserMode";
 
-  if (Firebase.getInt(fbdo, userModePathToFireBase.c_str())) {  // successful
-    m_userMode = fbdo.intData();   // get value as String
+  if (Firebase.getString(fbdo, userModePathToFireBase.c_str())) {  // successful
+    m_userMode = fbdo.stringData();   // get value as String
     Serial.println("User Mode from Firebase: " + m_userMode);
   } else {
     Serial.println("Error: " + fbdo.errorReason());
@@ -433,36 +457,36 @@ void loop()
 
   #define HUM_PUMP_LIMIT    (40) // Percent
 
-  if ((eAUTO_MODE == m_userMode && m_huminity < HUM_PUMP_LIMIT) || 
-        (eMANUAL_MODE == m_userMode && m_userCommand == eSTARTPUMP_COMMAND)
+  if ((m_userMode == "Auto" && m_huminity < HUM_PUMP_LIMIT) || 
+        (m_userMode == "Manual" && m_userCommand == eSTARTPUMP_COMMAND)
     )
   {
     startPump();
   }
-  else if ((eAUTO_MODE == m_userMode && m_huminity >= HUM_PUMP_LIMIT) || 
-        (eMANUAL_MODE == m_userMode && m_userCommand == eSTOPPUMP_COMMAND)
+  else if ((m_userMode == "Auto" && m_huminity >= HUM_PUMP_LIMIT) || 
+        (m_userMode == "Manual" && m_userCommand == eSTOPPUMP_COMMAND)
       )
   {
     stopPump();
   }
 
-  Serial.print("User Mode : ");
-  Serial.print(m_userMode);
-  Serial.print("User Command : ");
-  Serial.println(m_userCommand);
+  // Serial.print("User Mode : ");
+  // Serial.print(m_userMode);
+  // Serial.print("User Command : ");
+  // Serial.println(m_userCommand);
 
-  if (detectRain() == eRAINING)
-  {
-    closeRoof();
-  } else {
-    if (m_roofStatus == eROOF_CLOSED)
-      openRoof();
-  }
+  // if (detectRain() == eRAINING)
+  // {
+  //   closeRoof();
+  // } else {
+  //   if (m_roofStatus == eROOF_CLOSED)
+  //     openRoof();
+  // }
 
   updateOnLcd();
 
-  // getDataFromFirebase();
+  getDataFromFirebase();
   // pushDataToFirebase();
   
-  delay(500);
+  delay(50);
 }
