@@ -37,6 +37,11 @@ unsigned long sendDataPrevMillis = 0;
 
 unsigned long count = 0;
 
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+
+LiquidCrystal_I2C lcd(0x27, 16, 2);
+
 enum{
   eROOF_RUNNING,
   eROOF_OPENING,
@@ -194,16 +199,34 @@ void setup()
   config.tcp_data_sending_retry = 1;
 
   */
+
+  // Initialize the screen
+  lcd.init();
+  lcd.backlight();
+
+  lcd.print("Welcome to the Smart Garden !!!");
+  delay(100);
+  lcd.clear();
 }
 
 
-int readHuminity()
+float readHuminity()
 {
-  int value = analogRead(A0); // Huminity analog plug into A0
-  int percent = map(value, 0, 1023, 0, 100);
+  float value = analogRead(A0); // Huminity analog plug into A0
+  float percent = map(value, 0, 1023, 0, 100);
   Serial.println("Huminity value: ");
   Serial.println(percent);
   return percent;
+}
+
+float readTemperature()
+{
+  // float value = analogRead(A0); // Huminity analog plug into A0
+  // float percent = map(value, 0, 1023, 0, 100);
+  // Serial.println("Temperature value: ");
+  // Serial.println(percent);
+  float value = 35.6;
+  return value;
 }
 
 void startPump()
@@ -261,33 +284,6 @@ void closeRoof()
 
   m_roofStatus = eROOF_CLOSED;
   Serial.println("Completed closing the roof !!!!");
-}
-
-void handleUART_fromArduino()
-{
-  // Check if Nano sends something
-  if (Serial.available()) {
-    String msg = Serial.readStringUntil('\n');
-    Serial.print("Got from Nano: ");
-    Serial.println(msg);
-
-    msg.toUpperCase(); // Normalize to uppercase
-    int spaceIndex = msg.indexOf(' ');
-
-    if (spaceIndex == -1) {
-      Serial.println("Invalid command. Use: CW <steps> or CCW <steps>");
-      return;
-    }
-
-    String command = msg.substring(0, spaceIndex);
-    int value = msg.substring(spaceIndex + 1).toInt();
-
-    // Get m_roofStatus and m_roofMotorStatus
-    if (command == "Roof_motor_status")
-    {
-      m_roofMotorStatus = value;
-    }
-  }
 }
 
 void handleFirebase()
@@ -360,9 +356,28 @@ void handleFirebase()
   }
 }
 
+void updateOnLcd()
+{
+  lcd.clear();
+  lcd.setCursor(0,0);
+  lcd.print("%Huminity : ");
+  lcd.print(m_huminity);
+
+  // Enter
+  lcd.setCursor(2,1);
+
+  lcd.print(m_temperature);
+  lcd.print((char)223); // ký hiệu độ °
+  lcd.print("C :");
+
+  lcd.print(100);
+  lcd.print("%");
+}
+
 void loop()
 {
   m_huminity = readHuminity();
+  m_temperature = readTemperature();
 
   #define HUM_PUMP_LIMIT    (40) // Percent
 
@@ -381,6 +396,6 @@ void loop()
       openRoof();
   }
 
-
+  updateOnLcd();
   delay(500);
 }
