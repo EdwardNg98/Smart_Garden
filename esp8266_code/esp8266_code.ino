@@ -33,25 +33,18 @@ FirebaseData fbdo;
 FirebaseAuth auth;
 FirebaseConfig config;
 
-#include <SoftwareSerial.h>
-// Khai báo các chân RX và TX cho espsoftwareserial
-// https://www.electronicwings.com/nodemcu/nodemcu-uart-with-esplorer-ide
-// esp8266 co 17/16 va 1/3 (TX/RX)
-#define RX_PIN 16
-#define TX_PIN 17
-
-// Tạo một đối tượng espsoftwareserial với tốc độ baud là 9600
-SoftwareSerial arduinoSerial(RX_PIN, TX_PIN);
-
 unsigned long sendDataPrevMillis = 0;
 
 unsigned long count = 0;
 
 enum{
-  ROOF_RUNNING,
-  ROOF_IDLE
+  eROOF_RUNNING,
+  eROOF_OPENING,
+  eROOF_CLOSING,
+  eROOF_IDLE
 } ;
-int m_roofMotorStatus = ROOF_IDLE;
+
+int m_roofMotorStatus = eROOF_IDLE;
 
 enum {
   eROOF_CLOSED,
@@ -65,6 +58,14 @@ enum {
 
 bool m_pumpStatus = ePUMP_STOPED;
 bool m_roofStatus = eROOF_CLOSED;
+
+
+// Pin definitions for motor
+// const int stepPin = 7; 
+const int dirPin  = 5; 
+const int enPin   = 6;
+const int rainSensorPin = 7;
+const int relayForPumpPin = 0;
 
 String serverList[3] = {
   "pool.ntp.org",
@@ -88,8 +89,22 @@ int udpPort = 1000;
 float m_huminity = 0.0;
 float m_temperature = 0.0;
 
+int limitSwitchPin_1 = 3; 
+int limitSwitchPin_2 = 4;
+
 void setup()
 {
+  // Motor setup
+  pinMode(dirPin, OUTPUT);
+  pinMode(enPin, OUTPUT);
+
+  digitalWrite(enPin, HIGH); // Disble motor driver
+
+  // Cam bien hanh trinh setup
+  pinMode(limitSwitchPin_1, INPUT_PULLUP); // Bật trở kéo lên
+  pinMode(limitSwitchPin_2, INPUT_PULLUP); // Bật trở kéo lên
+
+  pinMode(rainSensorPin, INPUT_PULLUP); // Bật trở kéo lên
 
   Serial.begin(115200);
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
@@ -195,50 +210,72 @@ void startPump()
 {
   Serial.println(" Start Pump !!!");
   m_pumpStatus = ePUMP_STARTED;
+
+  digitalWrite(relayForPumpPin,HIGH);
 }
 
 void stopPump()
 {
   Serial.println(" Stop Pump !!!");
   m_pumpStatus = ePUMP_STOPED;
+
+  digitalWrite(relayForPumpPin,LOW);
 }
 
 bool detectRain()
 {
-  return false;
+  Serial.print("Gia tri cam bien mua: ");
+  Serial.println(digitalRead(rainSensorPin));
+  return digitalRead(rainSensorPin);
 }
 
 
-// Send command to Arduino
+// Update the action
 void openRoof()
 {
-  m_roofStatus = eROOF_OPENED;
+  while (digitalRead(limitSwitchPin_1) == HIGH)
+  {
+    m_roofMotorStatus = eROOF_OPENING;
 
-  arduinoSerial.print("Command: ");
-  arduinoSerial.println("eROOF_OPENED");
+    Serial.println("Opening the Roof !!!!");
+
+    digitalWrite(enPin, LOW); // Disble motor driver
+    digitalWrite(dirPin, LOW); // Set dir
+  }
+
+  m_roofStatus = eROOF_OPENED;
+  Serial.println("Completed opening the roof !!!!");
 }
 
 void closeRoof()
 {
-  m_roofStatus = eROOF_CLOSED;
+  while (digitalRead(limitSwitchPin_2) == HIGH)
+  {
+    m_roofMotorStatus = eROOF_CLOSING;
 
-  arduinoSerial.print("Command: ");
-  arduinoSerial.println("eROOF_CLOSED");
+    Serial.println("Closing the Roof !!!!");
+
+    digitalWrite(enPin, LOW); // Disble motor driver
+    digitalWrite(dirPin, HIGH); // Set dir
+  }
+
+  m_roofStatus = eROOF_CLOSED;
+  Serial.println("Completed closing the roof !!!!");
 }
 
 void handleUART_fromArduino()
 {
   // Check if Nano sends something
-  if (arduinoSerial.available()) {
-    String msg = arduinoSerial.readStringUntil('\n');
-    arduinoSerial.print("Got from Nano: ");
-    arduinoSerial.println(msg);
+  if (Serial.available()) {
+    String msg = Serial.readStringUntil('\n');
+    Serial.print("Got from Nano: ");
+    Serial.println(msg);
 
     msg.toUpperCase(); // Normalize to uppercase
     int spaceIndex = msg.indexOf(' ');
 
     if (spaceIndex == -1) {
-      arduinoSerial.println("Invalid command. Use: CW <steps> or CCW <steps>");
+      Serial.println("Invalid command. Use: CW <steps> or CCW <steps>");
       return;
     }
 
@@ -325,67 +362,25 @@ void handleFirebase()
 
 void loop()
 {
-    m_huminity = readHuminity();
-    #define HUM_PUMP_LIMIT    (40) // Percent
+  m_huminity = readHuminity();
 
-    if (m_huminity < HUM_PUMP_LIMIT)
-      startPump();
-    else {
-      if (m_pumpStatus == ePUMP_STARTED)
-        stopPump();
-    }
+  #define HUM_PUMP_LIMIT    (40) // Percent
 
-    if (detectRain())
-    {
-      closeRoof();
-    } else {
-      if (m_roofStatus == eROOF_CLOSED)
-        openRoof();
-    }
+  if (m_huminity < HUM_PUMP_LIMIT)
+    startPump();
+  else {
+    if (m_pumpStatus == ePUMP_STARTED)
+      stopPump();
+  }
 
-    // Serial.printf("Get float... %s\n", Firebase.getFloat(fbdo, F("/test/float")) ? String(fbdo.to<float>()).c_str() : fbdo.errorReason().c_str());
+  if (detectRain())
+  {
+    closeRoof();
+  } else {
+    if (m_roofStatus == eROOF_CLOSED)
+      openRoof();
+  }
 
-    // Serial.printf("Set double... %s\n", Firebase.setDouble(fbdo, F("/test/double"), count + 35.517549723765) ? "ok" : fbdo.errorReason().c_str());
 
-    // Serial.printf("Get double... %s\n", Firebase.getDouble(fbdo, F("/test/double")) ? String(fbdo.to<double>()).c_str() : fbdo.errorReason().c_str());
-
-    // Serial.printf("Set string... %s\n", Firebase.setString(fbdo, F("/test/string"), "Hello World!") ? "ok" : fbdo.errorReason().c_str());
-
-    // Serial.printf("Get string... %s\n", Firebase.getString(fbdo, F("/test/string")) ? fbdo.to<const char *>() : fbdo.errorReason().c_str());
-
-    // // For the usage of FirebaseJson, see examples/FirebaseJson/BasicUsage/Create_Parse_Edit.ino
-    // FirebaseJson json;
-
-    // if (count == 0)
-    // {
-    //   json.set("value/round/" + String(count), F("cool!"));
-    //   json.set(F("vaue/ts/.sv"), F("timestamp"));
-    //   Serial.printf("Set json... %s\n", Firebase.set(fbdo, F("/test/json"), json) ? "ok" : fbdo.errorReason().c_str());
-    // }
-    // else
-    // {
-    //   json.add(String(count), "smart!");
-    //   Serial.printf("Update node... %s\n", Firebase.updateNode(fbdo, F("/test/json/value/round"), json) ? "ok" : fbdo.errorReason().c_str());
-    // }
-
-    Serial.println();
-
-    // For generic set/get functions.
-
-    // For generic set, use Firebase.set(fbdo, <path>, <any variable or value>)
-
-    // For generic get, use Firebase.get(fbdo, <path>).
-    // And check its type with fbdo.dataType() or fbdo.dataTypeEnum() and
-    // cast the value from it e.g. fbdo.to<int>(), fbdo.to<std::string>().
-
-    // The function, fbdo.dataType() returns types String e.g. string, boolean,
-    // int, float, double, json, array, blob, file and null.
-
-    // The function, fbdo.dataTypeEnum() returns type enum (number) e.g. firebase_rtdb_data_type_null (1),
-    // firebase_rtdb_data_type_integer, firebase_rtdb_data_type_float, firebase_rtdb_data_type_double,
-    // firebase_rtdb_data_type_boolean, firebase_rtdb_data_type_string, firebase_rtdb_data_type_json,
-    // firebase_rtdb_data_type_array, firebase_rtdb_data_type_blob, and firebase_rtdb_data_type_file (10)
-
-    // count++;
-  // }
+  delay(500);
 }
