@@ -97,6 +97,23 @@ float m_temperature = 0.0;
 int limitSwitchPin_1 = 3; 
 int limitSwitchPin_2 = 4;
 
+enum {
+  eMANUAL_MODE,
+  eAUTO_MODE,
+};
+
+int m_userMode = eMANUAL_MODE;
+
+enum {
+  eIDLE_COMMAND,
+  eSTARTPUMP_COMMAND,
+  eSTOPPUMP_COMMAND,
+  eOPENROOF_COMMAND,
+  eCLOSEROOF_COMMAND,
+};
+
+int m_userCommand = eIDLE_COMMAND;
+
 void setup()
 {
   // Motor setup
@@ -286,7 +303,7 @@ void closeRoof()
   Serial.println("Completed closing the roof !!!!");
 }
 
-void handleFirebase()
+void pushDataToFirebase()
 {
   unsigned long epochTime;
   String hoursStr, minuteStr, secondStr;
@@ -294,52 +311,44 @@ void handleFirebase()
     // delay(500);
     Serial.println("Wifi disconnected");
   } else {
-    if (timeClient.update()) // Fetch current time
-    {
-      epochTime = timeClient.getEpochTime(); // Unix timestamp
-      Serial.print("Epoch Time: ");
-      Serial.println(epochTime);
+    // if (timeClient.update()) // Fetch current time
+    // {
+    //   epochTime = timeClient.getEpochTime(); // Unix timestamp
+    //   Serial.print("Epoch Time: ");
+    //   Serial.println(epochTime);
 
-      Serial.print("Formatted Time: ");
-      Serial.println(timeClient.getFormattedTime()); // e.g., "14:35:10"
-      unsigned long hours = (epochTime % 86400L) / 3600;
-      hoursStr = hours < 10 ? "0" + String(hours) : String(hours);
+    //   Serial.print("Formatted Time: ");
+    //   Serial.println(timeClient.getFormattedTime()); // e.g., "14:35:10"
+    //   unsigned long hours = (epochTime % 86400L) / 3600;
+    //   hoursStr = hours < 10 ? "0" + String(hours) : String(hours);
 
-      unsigned long minutes = (epochTime % 3600) / 60;
-      minuteStr = minutes < 10 ? "0" + String(minutes) : String(minutes);
+    //   unsigned long minutes = (epochTime % 3600) / 60;
+    //   minuteStr = minutes < 10 ? "0" + String(minutes) : String(minutes);
 
-      unsigned long seconds = epochTime % 60;
-      secondStr = seconds < 10 ? "0" + String(seconds) : String(seconds);
+    //   unsigned long seconds = epochTime % 60;
+    //   secondStr = seconds < 10 ? "0" + String(seconds) : String(seconds);
 
-      Serial.printf("%s:%s:%s\n", hoursStr, minuteStr, secondStr);
+    //   Serial.printf("%s:%s:%s\n", hoursStr, minuteStr, secondStr);
       
-    } else 
-    {
-      Serial.println("NTP update time failed");
-      // timeClient.begin(udpPort++);
-      // Serial.print("Change UDP to new port : "); Serial.println(udpPort);
-    }
+    // } else 
+    // {
+    //   Serial.println("NTP update time failed");
+    //   // timeClient.begin(udpPort++);
+    //   // Serial.print("Change UDP to new port : "); Serial.println(udpPort);
+    // }
   }
 
   // Firebase.ready() should be called repeatedly to handle authentication tasks.
   // if (Firebase.ready() && (millis() - sendDataPrevMillis > 15000 || sendDataPrevMillis == 0))
   {
-    sendDataPrevMillis = millis();
-    delay(5000);
+    // sendDataPrevMillis = millis();
+    // delay(5000);
     
     String prefix;
     // String prefix = "/GardenSensor/" + hoursStr + minuteStr + secondStr;
     // String huminityPathToFireBase = prefix + "/Huminity";
     // String timePathToFireBase = prefix + "/time";
 
-    // Should be remove in reality
-    static int r1 = 0;
-    r1 = r1+ 3; if (r1 > 40) r1=0;
-
-    // String firebaseString = "13-09-2025;" + timeClient.getFormattedTime() + ";Huminity;" + String(huminity + r1);
-    // Serial.printf("Push huminity to Firebase... %s\n", Firebase.setString(fbdo, huminityPathToFireBase.c_str(), firebaseString) ? "ok" : fbdo.errorReason().c_str());
-    // Serial.printf("Push time to Firebase... %s\n", Firebase.setString(fbdo, timePathToFireBase.c_str(), timeClient.getFormattedTime()) ? "ok" : fbdo.errorReason().c_str());
-  
     prefix = "/GardenControl";
     String huminityPathToFireBase = prefix + "/Huminity";
 
@@ -353,6 +362,29 @@ void handleFirebase()
 
     String roofMotorStatusPathToFireBase = prefix + "/RoofMotor_Status";
     Serial.printf("Push roofMotorStatus to Firebase... %s\n", Firebase.setString(fbdo, roofMotorStatusPathToFireBase.c_str(), m_roofMotorStatus) ? "ok" : fbdo.errorReason().c_str());
+  }
+}
+
+void getDataFromFirebase()
+{
+  String prefix;
+  prefix = "/GardenControl";
+  String userModePathToFireBase = prefix + "/UserMode";
+
+  if (Firebase.getInt(fbdo, userModePathToFireBase.c_str())) {  // successful
+    m_userMode = fbdo.intData();   // get value as String
+    Serial.println("User Mode from Firebase: " + m_userMode);
+  } else {
+    Serial.println("Error: " + fbdo.errorReason());
+  }
+
+  String userCommandPathToFireBase = prefix + "/UserCommand";
+
+  if (Firebase.getInt(fbdo, userCommandPathToFireBase.c_str())) {  // successful
+    m_userCommand = fbdo.intData();   // get value as String
+    Serial.println("User Command from Firebase: " + m_userCommand);
+  } else {
+    Serial.println("Error: " + fbdo.errorReason());
   }
 }
 
@@ -381,12 +413,23 @@ void loop()
 
   #define HUM_PUMP_LIMIT    (40) // Percent
 
-  if (m_huminity < HUM_PUMP_LIMIT)
+  if ((eAUTO_MODE == m_userMode && m_huminity < HUM_PUMP_LIMIT) || 
+        (eMANUAL_MODE == m_userMode && m_userCommand == eSTARTPUMP_COMMAND)
+    )
+  {
     startPump();
-  else {
-    if (m_pumpStatus == ePUMP_STARTED)
-      stopPump();
   }
+  else if ((eAUTO_MODE == m_userMode && m_huminity >= HUM_PUMP_LIMIT) || 
+        (eMANUAL_MODE == m_userMode && m_userCommand == eSTOPPUMP_COMMAND)
+      )
+  {
+    stopPump();
+  }
+
+  Serial.print("User Mode : ");
+  Serial.print(m_userMode);
+  Serial.print("User Command : ");
+  Serial.println(m_userCommand);
 
   if (detectRain())
   {
@@ -397,5 +440,9 @@ void loop()
   }
 
   updateOnLcd();
+
+  getDataFromFirebase();
+  pushDataToFirebase();
+  
   delay(500);
 }
