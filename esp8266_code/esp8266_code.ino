@@ -14,8 +14,10 @@
 #include <DHT.h>
 
 /* 1. Define the WiFi credentials */
-#define WIFI_SSID "The Wow Coffee & Tea"
-#define WIFI_PASSWORD "thewowxinchao"
+// #define WIFI_SSID "The Wow Coffee & Tea"
+#define WIFI_SSID "HUNG 1616"
+// #define WIFI_PASSWORD "thewowxinchao"
+#define WIFI_PASSWORD "89@05oH5"
 
 // For the following credentials, see examples/Authentications/SignInAsUser/EmailPassword/EmailPassword.ino
 
@@ -124,7 +126,7 @@ enum {
 };
 
 int m_userCommand = eIDLE_COMMAND;
-
+int m_rainStatus = 1;
 enum {
   eRAINING,
   eNO_RAINING
@@ -135,6 +137,7 @@ void setup()
   // Initialize pump
   pinMode(relayForPumpPin, OUTPUT);
   digitalWrite(relayForPumpPin, LOW);
+  m_pumpStatus = ePUMP_STOPED;
 
   // Motor setup
   pinMode(motorRequestPin, OUTPUT);
@@ -249,7 +252,7 @@ void setup()
 float readHuminity()
 {
   float value = analogRead(A0); // Huminity analog plug into A0
-  float percent = map(value, 0, 1023, 0, 100);
+  float percent = map(value, 1023, 0, 30, 100);
   Serial.print("Huminity value: ");
   Serial.println(percent);
   return percent;
@@ -296,13 +299,20 @@ void stopPump()
   digitalWrite(relayForPumpPin,LOW);
 }
 
-bool detectRain()
+int detectRain()
 {
-
   // 1 : means no rain, 0 : raining
   Serial.print("Gia tri cam bien mua: ");
   Serial.println(digitalRead(rainSensorPin));
-  return digitalRead(rainSensorPin);
+
+  int rain_1 = digitalRead(rainSensorPin);
+  delay(40);
+  int rain_2 = digitalRead(rainSensorPin);
+  
+  if (rain_1 == rain_2)
+    return rain_1;
+  
+  return m_rainStatus;
 }
 
 
@@ -330,7 +340,7 @@ void openRoof()
   String prefix = "/GardenControl";
   String usercontrolPathToFireBase = prefix + "/UserCommand";
 
-  Serial.printf("Push usercommand = IDLE to Firebase... %s\n", Firebase.setInt(fbdo, usercontrolPathToFireBase.c_str(), 0) ? "ok" : fbdo.errorReason().c_str());
+  Serial.printf("Push usercommand = IDLE to Firebase... %s\n", Firebase.setString(fbdo, usercontrolPathToFireBase.c_str(), "0") ? "ok" : fbdo.errorReason().c_str());
   
   Serial.println("Completed opening the roof !!!!");
 }
@@ -358,7 +368,7 @@ void closeRoof()
   String prefix = "/GardenControl";
   String usercontrolPathToFireBase = prefix + "/UserCommand";
 
-  Serial.printf("Push usercommand = IDLE to Firebase... %s\n", Firebase.setInt(fbdo, usercontrolPathToFireBase.c_str(), 0) ? "ok" : fbdo.errorReason().c_str());
+  Serial.printf("Push usercommand = IDLE to Firebase... %s\n", Firebase.setString(fbdo, usercontrolPathToFireBase.c_str(), "0") ? "ok" : fbdo.errorReason().c_str());
   
   Serial.println("Completed closing the roof !!!!");
 }
@@ -418,10 +428,23 @@ void pushDataToFirebase()
     Serial.printf("Push temperature to Firebase... %s\n", Firebase.setFloat(fbdo, temperaturePathToFireBase.c_str(), m_temperature) ? "ok" : fbdo.errorReason().c_str());
 
     String pumpStatusPathToFireBase = prefix + "/Pump_Status";
-    Serial.printf("Push pumpStatus to Firebase... %s\n", Firebase.setString(fbdo, pumpStatusPathToFireBase.c_str(), m_pumpStatus) ? "ok" : fbdo.errorReason().c_str());
+    String pumpstatus_text;
+    if (m_pumpStatus == ePUMP_STARTED)
+      pumpstatus_text = "Start";
+    else 
+      pumpstatus_text = "Stop";
+    Serial.printf("Push pumpStatus to Firebase... %s\n", Firebase.setString(fbdo, pumpStatusPathToFireBase.c_str(), pumpstatus_text) ? "ok" : fbdo.errorReason().c_str());
 
-    String roofMotorStatusPathToFireBase = prefix + "/RoofMotor_Status";
-    Serial.printf("Push roofMotorStatus to Firebase... %s\n", Firebase.setString(fbdo, roofMotorStatusPathToFireBase.c_str(), m_roofMotorStatus) ? "ok" : fbdo.errorReason().c_str());
+    String roofMotorStatusPathToFireBase = prefix + "/Roof_Status";
+    String roofstatus_text;
+    if (m_roofStatus == eROOF_CLOSED)
+      roofstatus_text = "Close";
+    else 
+      roofstatus_text = "Open";
+    Serial.printf("Push roofMotorStatus to Firebase... %s\n", Firebase.setString(fbdo, roofMotorStatusPathToFireBase.c_str(), roofstatus_text) ? "ok" : fbdo.errorReason().c_str());
+
+    String rainStatusPathToFireBase = prefix + "/Rain_Sensor";
+    Serial.printf("Push rainStatus to Firebase... %s\n", Firebase.setInt(fbdo, rainStatusPathToFireBase.c_str(), m_rainStatus) ? "ok" : fbdo.errorReason().c_str());    
   }
 }
 
@@ -429,20 +452,25 @@ void getDataFromFirebase()
 {
   String prefix;
   prefix = "/GardenControl";
-  String userModePathToFireBase = prefix + "/UserMode";
+  String userModePathToFireBase = prefix + "/UserMode"; // "/GardenControl/UserMode"
 
   if (Firebase.getString(fbdo, userModePathToFireBase.c_str())) {  // successful
     m_userMode = fbdo.stringData();   // get value as String
+    m_userMode.replace("\"", "");       // Remove all " characters
+    m_userMode.replace("\\", "");  // Remove all backslashes
+    // Serial.println(m_userMode);         // Prints: Manual
     Serial.println("User Mode from Firebase: " + m_userMode);
   } else {
     Serial.println("Error: " + fbdo.errorReason());
   }
 
   String userCommandPathToFireBase = prefix + "/UserCommand";
-
-  if (Firebase.getInt(fbdo, userCommandPathToFireBase.c_str())) {  // successful
-    m_userCommand = fbdo.intData();   // get value as String
-    Serial.println("User Command from Firebase: " + m_userCommand);
+  
+  if (Firebase.getString(fbdo, userCommandPathToFireBase.c_str())) {  // successful
+    String usercommand_string = fbdo.stringData(); // get value as String
+    m_userCommand = usercommand_string.toInt();   
+    Serial.print("User Command from Firebase: ");
+    Serial.println(m_userCommand);
   } else {
     Serial.println("Error: " + fbdo.errorReason());
   }
@@ -470,8 +498,10 @@ void loop()
 {
   m_huminity = readHuminity();
   m_temperature = readTemperature();
+  m_rainStatus = detectRain();
 
-  #define HUM_PUMP_LIMIT    (40) // Percent
+
+  #define HUM_PUMP_LIMIT    (60) // Percent
 
   if ((m_userMode == "Auto" && m_huminity < HUM_PUMP_LIMIT) || 
         (m_userMode == "Manual" && m_userCommand == eSTARTPUMP_COMMAND)
@@ -491,12 +521,14 @@ void loop()
   // Serial.print("User Command : ");
   // Serial.println(m_userCommand);
 
-  if ((m_userMode == "Auto" && detectRain() == eRAINING) || 
+
+
+  if ((m_userMode == "Auto" && m_rainStatus == eRAINING) || 
         (m_userMode == "Manual" && m_userCommand == eCLOSEROOF_COMMAND))
   {
     closeRoof();
   } 
-  else if ((m_userMode == "Auto" && detectRain() == eRAINING) || 
+  else if ((m_userMode == "Auto" && m_rainStatus == eNO_RAINING) || 
         (m_userMode == "Manual" && m_userCommand == eOPENROOF_COMMAND))
   {
     openRoof();
@@ -505,7 +537,7 @@ void loop()
   updateOnLcd();
 
   getDataFromFirebase();
-  // pushDataToFirebase();
+  pushDataToFirebase();
   
   delay(50);
 }
